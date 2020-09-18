@@ -1,11 +1,23 @@
 use clap::Arg;
 use std::error::Error;
 use std::ffi::OsStr;
+// use std::path::PathBuf;
 use std::{env, process};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let current_dir = env::current_dir()?;
     let args = get_args(current_dir.as_os_str());
+
+    if args.is_present("compare") {
+        if let Ok(warnings) = dotenv_linter::compare(&args, &current_dir) {
+            for warning in warnings {
+                println!("{}", warning);
+                process::exit(1);
+            }
+        }
+
+        process::exit(0);
+    }
 
     if args.is_present("show-checks") {
         dotenv_linter::available_check_names()
@@ -74,6 +86,15 @@ fn get_args(current_dir: &OsStr) -> clap::ArgMatches {
                 .default_value_os(current_dir)
                 .required(true)
                 .multiple(true),
+        )
+        .arg(
+            Arg::with_name("compare")
+                .short("c")
+                .long("compare")
+                .value_name("FILE_NAME")
+                .help("Compare keys of files")
+                .multiple(true)
+                .takes_value(true),
         )
         .arg(
             Arg::with_name("exclude")

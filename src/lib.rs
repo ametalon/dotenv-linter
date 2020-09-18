@@ -1,5 +1,6 @@
 use crate::common::*;
 
+use std::collections::HashSet;
 use std::error::Error;
 use std::path::PathBuf;
 
@@ -15,6 +16,11 @@ pub fn run(args: &clap::ArgMatches, current_dir: &PathBuf) -> Result<Vec<Warning
     let mut file_paths: Vec<PathBuf> = Vec::new();
     let mut skip_checks: Vec<&str> = Vec::new();
     let mut excluded_paths: Vec<PathBuf> = Vec::new();
+
+    if args.is_present("compare") {
+        let files = args.values_of("compare");
+        println!("files: {:?}", files);
+    }
 
     let is_recursive = args.is_present("recursive");
 
@@ -67,6 +73,71 @@ pub fn run(args: &clap::ArgMatches, current_dir: &PathBuf) -> Result<Vec<Warning
         }
 
         warnings.extend(result);
+    }
+
+    Ok(warnings)
+}
+
+#[derive(Debug)]
+struct CompareType {
+    pub path: PathBuf,
+    pub keys: Vec<String>,
+}
+
+pub fn compare(
+    args: &clap::ArgMatches,
+    current_dir: &PathBuf,
+) -> Result<Vec<String>, Box<dyn Error>> {
+    let mut warnings: Vec<String> = Vec::new();
+    let mut file_paths: Vec<PathBuf> = Vec::new();
+    let mut compared_files: Vec<CompareType> = Vec::new();
+    let mut all_keys: HashSet<String> = vec![].into_iter().collect();
+
+    if let Some(inputs) = args.values_of("compare") {
+        file_paths = inputs
+            .filter_map(|f| fs_utils::canonicalize(f).ok())
+            .collect();
+    }
+
+    // Create compared structure
+    for path in file_paths {
+        let mut keys: Vec<String> = Vec::new();
+        let relative_path = match fs_utils::get_relative_path(&path, &current_dir) {
+            Some(p) => p,
+            None => continue,
+        };
+
+        let (fe, strs) = match FileEntry::from(relative_path.clone()) {
+            Some(f) => f,
+            None => continue,
+        };
+
+        for line in get_line_entries(&fe, strs) {
+            if let Some(key) = line.get_key() {
+                all_keys.insert(key.clone());
+                keys.push(key)
+            }
+        }
+
+        let bla: CompareType = CompareType {
+            path: relative_path,
+            keys,
+        };
+
+        compared_files.push(bla);
+    }
+
+    for file in compared_files {
+        // copy all keys
+        let mut missing_keys = all_keys.clone();
+        missing_keys.retain(|key| !file.keys.contains(key));
+
+        if !missing_keys.is_empty() {
+            warnings.push(format!(
+                "file: {:?} is missing keys: {:?}",
+                file.path, missing_keys
+            ))
+        }
     }
 
     Ok(warnings)
